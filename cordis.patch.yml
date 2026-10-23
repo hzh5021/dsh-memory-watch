@@ -1,0 +1,19 @@
+# bundle patch for dsh-memory-watch: inserts its plugin row into the profile roster.
+#
+# 默认不碰任何文件：home 不配（空）时它只做提醒，磁盘动作一次都不做。
+# 想让它顺手滚动压缩家里的账，再配 home：
+#   config:
+#     home: <你的家目录>
+#     ledger: 长期记忆库.md      # home 下的相对路径
+#     archiveDir: 记忆档案       # home 下的相对路径
+#     highRatio: 0.7            # 占窗口这个比例就直接提醒
+#     floorRatio: 0.45          # 低于它完全不打扰
+#     minGrowthTokens: 24000    # 两次提醒之间至少要长这么多
+#     cooldownMs: 300000
+#     absoluteFallbackTokens: 90000
+#     keepSections: 12          # 压账时最新的这么多节原样留着
+#     minArchiveSections: 6
+#     worknoteFile: null        # 另一本外部笔记（绝对路径）；null = 不管它
+- insert:
+    - id: memory-watch
+      name: dsh-memory-watch

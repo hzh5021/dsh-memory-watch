@@ -1,0 +1,30 @@
+{
+  "name": "dsh-memory-watch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Warns the session to flush what matters before context compaction kicks in, and rolls a long-term ledger into a frozen archive with a one-line digest per moved section.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "author": "hzh5021",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hzh5021/dsh-memory-watch.git"
+  },
+  "homepage": "https://github.com/hzh5021/dsh-memory-watch#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
