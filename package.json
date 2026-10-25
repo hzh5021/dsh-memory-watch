@@ -1,8 +1,8 @@
 {
   "name": "dsh-memory-watch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Warns the session to flush what matters before context compaction kicks in, and rolls a long-term ledger into a frozen archive with a one-line digest per moved section.",
+  "description": "Warns the session to flush what matters before context compaction kicks in, and rolls long ledgers (a home ledger, an outside work note, and a second day-per-section book) into frozen archives with a one-line digest per moved section — which section is oldest is decided by its title date, not by its position in the file. An optional startup probe records version, this build's own hash and each run's outcome.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

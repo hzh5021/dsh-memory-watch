@@ -216,6 +216,59 @@ ok("consolidateLedger：有超大节时宁可不压", () => {
   assert.equal(r.reason, "oversize-section");
 });
 
+// ── 6b. 按日期判新旧 ──────────────────────────────────────────────────────
+
+ok("sectionDate：认得出标题里的日期，认不出给 null", () => {
+  assert.equal(I.sectionDate("2026-10-26 03:45 · 错题集搬家"), Date.UTC(2026, 9, 26));
+  assert.equal(I.sectionDate("2026-10-25 凌晨 · 某个凌晨的节"), Date.UTC(2026, 9, 25));
+  assert.equal(I.sectionDate("2026-10-19 ~ 2026-10-22（旧节已搬）"), Date.UTC(2026, 9, 19));
+  assert.equal(I.sectionDate("巩固层（旧节的提要）"), null);
+});
+
+ok("consolidateLedger：账是「新在前」时，搬的仍是日期最旧的那批", () => {
+  // fakeLedger 是"旧在前"；这里倒过来，模拟"新节插在最前面"那种真实写法。
+  const chunks = [];
+  for (let i = 20; i >= 1; i -= 1) {
+    chunks.push(`\n## 2026-10-${String(i).padStart(2, "0")} · 第 ${i} 件事\n\n${"正文。".repeat(120)}\n`);
+  }
+  const reversed = `# 头\n\n> 说明\n${chunks.join("")}`;
+  const r = I.consolidateLedger(reversed, { keepSections: 12 });
+  assert.equal(r.reason, "consolidated");
+  assert.equal(r.archived.length, 8);
+  assert.equal(r.archived[0].title.includes("第 1 件事"), true);
+  assert.equal(r.archived[7].title.includes("第 8 件事"), true);
+  assert.match(r.text, /## 2026-10-20 · 第 20 件事/);
+});
+
+ok("consolidateLedger：无日期的节不动，也不占 keep 名额", () => {
+  const body = "正文。".repeat(120);
+  const text = `# 头\n\n## 备忘甲\n没有日期\n\n## 2026-10-01 · 老一\n${body}\n\n## 2026-10-02 · 老二\n${body}\n\n## 2026-10-03 · 老三\n${body}\n`;
+  const r = I.consolidateLedger(text, { keepSections: 1, minArchiveSections: 1 });
+  assert.equal(r.reason, "consolidated");
+  assert.equal(r.archived.length, 2);
+  assert.equal(r.archived[0].title, "2026-10-01 · 老一");
+  assert.match(r.text, /## 备忘甲/);
+  assert.match(r.text, /## 2026-10-03 · 老三/);
+  assert.doesNotMatch(r.text, /## 2026-10-01 · 老一/);
+});
+
+ok("consolidateLedger：巩固层排在中间也被认出来（只留一个、不搬、提要没丢）", () => {
+  const body = "正文。".repeat(120);
+  const text = [
+    "# 头", "", "> 说明", "",
+    "## 2026-10-05 · 新节", "", body, "",
+    "## 巩固层（旧节的提要）", "", "> 2026-10-20 旧节的提要。", "", "- **很旧的一节**", "",
+    "## 2026-10-01 · 老一", "", body, "",
+    "## 2026-10-02 · 老二", "", body, "",
+  ].join("\n");
+  const r = I.consolidateLedger(text, { keepSections: 1, minArchiveSections: 1 });
+  assert.equal(r.reason, "consolidated");
+  assert.equal(r.text.split("\n").filter(line => line.trim() === "## 巩固层（旧节的提要）").length, 1);
+  assert.equal(r.archived.some(section => section.title.includes("巩固层")), false);
+  assert.match(r.text, /很旧的一节/);
+  assert.match(r.text, /## 2026-10-05 · 新节/);
+});
+
 // ── 7. 落磁盘（临时家） ────────────────────────────────────────────────────
 const home = await mkdtemp(join(tmpdir(), "memwatch-"));
 await writeFile(join(home, "长期记忆库.md"), fakeLedger(20), "utf8");
@@ -282,7 +335,7 @@ ok("apply：pre-step 在压力到线时追加一条 snapshot 消息", () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 190_000, projectedTokens: 195_000, contextWindow: 200_000 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0 });
+  mod.apply(ctx, { home, cooldownMs: 0, probeFile: "" });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "allow", messages: [{ role: "user", content: [{ type: "text", text: "原有消息" }] }] };
   return handler({ agent: { session: { id: "s1" } }, signal: { aborted: false } }, async () => decision).then(out => {
@@ -300,7 +353,7 @@ ok("apply：压力低时原样返回（同一条消息引用）", async () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 1_000, contextWindow: 200_000 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0, absoluteFallbackTokens: 0 });
+  mod.apply(ctx, { home, cooldownMs: 0, absoluteFallbackTokens: 0, probeFile: "" });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "allow", messages: [] };
   const out = await handler({ agent: { session: { id: "s2" } }, signal: { aborted: false } }, async () => decision);
@@ -315,11 +368,96 @@ ok("apply：reject 决策不被插手", async () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 999_999, contextWindow: 1 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0 });
+  mod.apply(ctx, { home, cooldownMs: 0, probeFile: "" });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "reject", messages: [] };
   const out = await handler({ agent: { session: { id: "s3" } }, signal: { aborted: false } }, async () => decision);
   assert.equal(out, decision);
+});
+
+// ── 7b. 第二本账（错题集那类） ────────────────────────────────────────────
+
+await okAsync("consolidateMistakes：临时家里搬走旧节，原文进 错题集-归档.md", async () => {
+  const mhome = await mkdtemp(join(tmpdir(), "memwatch-mistakes-"));
+  const body = "正文。".repeat(120);
+  const chunks = ["# 错题集", "", "> 规矩", ""];
+  for (let i = 20; i >= 1; i -= 1) {
+    chunks.push(`## 2026-10-${String(i).padStart(2, "0")}`, "", `- **第 ${i} 件事**`, "  - 错在哪：某某", "", body, "");
+  }
+  await writeFile(join(mhome, "错题集.md"), chunks.join("\n"), "utf8");
+  const opts = I.resolveOptions({ home: mhome, mistakesKeepSections: 3, mistakesMinArchiveSections: 1 });
+  assert.equal(opts.mistakesFile, "错题集.md");
+  assert.equal(opts.mistakesKeepSections, 3);
+  const result = await I.consolidateMistakes(opts);
+  assert.equal(result.ok, true);
+  assert.equal(result.changed, true);
+  assert.equal(result.archivedSections, 17);
+  const book = await readFile(join(mhome, "错题集.md"), "utf8");
+  assert.match(book, /## 巩固层/);
+  assert.match(book, /## 2026-10-20/);
+  assert.doesNotMatch(book, /## 2026-10-01\n\n- \*\*第 1 件事\*\*/);
+  const archive = await readFile(join(mhome, "记忆档案", "错题集-归档.md"), "utf8");
+  assert.match(archive, /第 1 件事/);
+  assert.match(archive, /归档（共 17 节）/);
+  const again = await I.consolidateMistakes(opts);
+  assert.equal(again.changed, false);
+  await rm(mhome, { recursive: true, force: true });
+});
+
+await okAsync("consolidateMistakes：节不够时不动；配成 null 或没 home 就跳过", async () => {
+  const mhome = await mkdtemp(join(tmpdir(), "memwatch-mistakes2-"));
+  await writeFile(join(mhome, "错题集.md"), "# 错题集\n\n## 2026-10-25\n\n- 一条\n", "utf8");
+  const first = await I.consolidateMistakes(I.resolveOptions({ home: mhome }));
+  assert.equal(first.changed, false);
+  assert.equal(first.reason, "nothing-old");
+  const off = await I.consolidateMistakes(I.resolveOptions({ home: mhome, mistakesFile: null }));
+  assert.equal(off.reason, "no-mistakes");
+  const noHome = await I.consolidateMistakes(I.resolveOptions({ home: "" }));
+  assert.equal(noHome.reason, "no-home");
+  await rm(mhome, { recursive: true, force: true });
+});
+
+// ── 9. 启动探针 ───────────────────────────────────────────────────────────
+
+ok("resolveOptions：探针默认不写，配了才写", () => {
+  assert.equal(I.resolveOptions().probeFile, "");
+  assert.equal(I.resolveOptions({ probeFile: "probe.log" }).probeFile, "probe.log");
+  assert.equal(I.resolveOptions({ probeFile: null }).probeFile, "");
+});
+
+await okAsync("writeProbe：追一行，带版本、代码哈希和三条结论", async () => {
+  const phome = await mkdtemp(join(tmpdir(), "memwatch-probe-"));
+  const probe = join(phome, "probe.log");
+  const options = I.resolveOptions({ home: phome, probeFile: probe });
+  const r = await I.writeProbe(options, {
+    home: { ok: true, changed: false, reason: "nothing-fresh" },
+    worknote: { ok: true, changed: true, archivedSections: 3, savedChars: 1234 },
+    mistakes: { ok: false, reason: "error" },
+  });
+  assert.equal(r.ok, true);
+  const first = await readFile(probe, "utf8");
+  assert.match(first, /code=[0-9a-f]{12}/);
+  assert.match(first, /ledger=nothing-fresh/);
+  assert.match(first, /worknote=搬了3节/);
+  assert.match(first, /mistakes=失败:error/);
+  const r2 = await I.writeProbe(options, { home: { ok: true, changed: false, reason: "nothing-old" } });
+  assert.equal(r2.ok, true);
+  assert.equal((await readFile(probe, "utf8")).trim().split("\n").length, 2);
+  const no = await I.writeProbe(I.resolveOptions({ home: phome, probeFile: null }), {});
+  assert.equal(no.reason, "no-probe");
+  await rm(phome, { recursive: true, force: true });
+});
+
+await okAsync("apply：启动时自己往探针里留一行", async () => {
+  const ahome = await mkdtemp(join(tmpdir(), "memwatch-apply-probe-"));
+  await writeFile(join(ahome, "长期记忆库.md"), "# 账\n\n## 2026-10-20 · 甲\n正文\n", "utf8");
+  const probe = join(ahome, "probe.log");
+  mod.apply({ on() {} }, { home: ahome, probeFile: probe });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  const text = await readFile(probe, "utf8");
+  assert.match(text, /ledger=nothing-old/);
+  assert.match(text, /code=[0-9a-f]{12}/);
+  await rm(ahome, { recursive: true, force: true });
 });
 
 // ── 收尾 ───────────────────────────────────────────────────────────────────
