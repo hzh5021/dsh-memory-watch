@@ -335,7 +335,7 @@ ok("apply：pre-step 在压力到线时追加一条 snapshot 消息", () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 190_000, projectedTokens: 195_000, contextWindow: 200_000 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0, probeFile: "" });
+  mod.apply(ctx, { home, cooldownMs: 0, probeFile: null });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "allow", messages: [{ role: "user", content: [{ type: "text", text: "原有消息" }] }] };
   return handler({ agent: { session: { id: "s1" } }, signal: { aborted: false } }, async () => decision).then(out => {
@@ -353,7 +353,7 @@ ok("apply：压力低时原样返回（同一条消息引用）", async () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 1_000, contextWindow: 200_000 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0, absoluteFallbackTokens: 0, probeFile: "" });
+  mod.apply(ctx, { home, cooldownMs: 0, absoluteFallbackTokens: 0, probeFile: null });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "allow", messages: [] };
   const out = await handler({ agent: { session: { id: "s2" } }, signal: { aborted: false } }, async () => decision);
@@ -368,7 +368,7 @@ ok("apply：reject 决策不被插手", async () => {
     },
     sessionProjections: { stateOf: () => ({ pressureTokens: 999_999, contextWindow: 1 }) },
   };
-  mod.apply(ctx, { home, cooldownMs: 0, probeFile: "" });
+  mod.apply(ctx, { home, cooldownMs: 0, probeFile: null });
   const handler = handlers.get("agent/pre-step")[0];
   const decision = { kind: "reject", messages: [] };
   const out = await handler({ agent: { session: { id: "s3" } }, signal: { aborted: false } }, async () => decision);
